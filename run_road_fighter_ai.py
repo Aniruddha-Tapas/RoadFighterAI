@@ -1,10 +1,13 @@
 """
 The classic game of road fighter
 """
+import neat
 import pygame
 import random
 import os
 import numpy as np
+import pickle
+import visualize
 
 pygame.font.init()  # init font
 
@@ -32,6 +35,8 @@ truck = pygame.image.load(os.path.join("images", "truck.png")).convert_alpha()
 base_img = pygame.transform.scale(pygame.image.load(os.path.join("images", "base.png")).convert_alpha(), (400, 800))
 crash = pygame.transform.scale(pygame.image.load(os.path.join("images", "crash_1.png")), (60, 60))
 
+gen = 0
+best_score = 0
 
 class RedCar:
     def __init__(self, x, y):
@@ -53,6 +58,13 @@ class RedCar:
             self.x = self.x - self.vel
         if dir == 'right':
             self.x = self.x + self.vel
+
+    def move(self):
+        """
+        make the car move
+        :return: None
+        """
+        self.tick_count += 1
 
     def draw(self, win):
         """
@@ -255,11 +267,11 @@ def get_mask(img):
     return pygame.mask.from_surface(img)
 
 
-def draw_window(win, redcar, othercars, base, score):
+def draw_window(win, redcars, othercars, base, score):
     """
     draws the windows for the main game loop
     :param win: pygame window surface
-    :param redcar: a Red Car object
+    :param redcars: a List of Red Car objects
     :param othercars: List of other cars
     :param score: score of the game (int)
     :return: None
@@ -268,19 +280,33 @@ def draw_window(win, redcar, othercars, base, score):
     base.draw(win)
     for car in othercars:
         car.draw(win)
-    redcar.draw(win)
+    for redcar in redcars:
+        redcar.draw(win)
     score_label = SCORE_FONT.render("Score: " + str(score), 1, (0, 0, 0))
     win.blit(score_label, (2, 20))
     pygame.display.update()
 
 
-def main(win, restart=False):
+def main(genomes, config):
     """
-    Runs the main game loop
-    :param win: pygame window surface
-    :return: None
+    Runs the simulation of the current population of
+    red cars and sets their fitness based on the number of other cars
+    they reach in the game.
     """
-    red = RedCar(250, 750)
+    global WIN, gen, best_score
+    win = WIN
+
+    nets = []
+    ge = []
+    reds = []
+
+    for _, g in genomes:
+        net = neat.nn.FeedForwardNetwork.create(g, config)
+        nets.append(net)
+        reds.append(RedCar(250, 750))
+        g.fitness = 0
+        ge.append(g)
+
     base = Base()
 
     random_car = OtherCar("yellow", 4, random.randint(-700, -600))
@@ -302,12 +328,10 @@ def main(win, restart=False):
     move_right = False
 
     run = True
-    start = restart
-    lost = False
 
     while run:
 
-        clock.tick(45)
+        clock.tick(30)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -316,84 +340,145 @@ def main(win, restart=False):
                 quit()
                 break
 
-            if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_SPACE:
-                    start = not start
-                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                    move_left = True
-                elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                    move_right = True
-            if event.type == pygame.KEYUP:
-                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
-                    move_left = False
-                elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
-                    move_right = False
+            # if event.type == pygame.KEYDOWN:
+            #     if event.key == pygame.K_LEFT or event.key == pygame.K_a:
+            #         move_left = True
+            #     elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
+            #         move_right = True
+            # if event.type == pygame.KEYUP:
+            #     if event.key == pygame.K_LEFT or event.key == pygame.K_a:
+            #         move_left = False
+            #     elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
+            #         move_right = False
 
-        if start:
-            if not lost:
 
-                base.move()
+        base.move()
 
-                #red.move()
-                if move_left:
-                    red.turn("left")
-                if move_right:
-                    red.turn("right")
 
-                rem = []
-                add_car = False
-                passed_car_id = 0
-
-                for car in othercars:
-                    car.move()
-
-                    if car.color == "blue" and car.y > random.randint(400, 500):
-                        car.turn()
-
-                    if car.color == "otherred" and car.y > random.randint(350, 450):
-                        car.turn_and_reverse()
-
-                    if car.collide(red, win):
-                        win.blit(crash, (car.x, car.y))
-                        end_screen(win)
-                        lost = True
-
-                    if car.y > WIN_HEIGHT:
-                        rem.append(car)
-
-                    if not car.passed and red.y < car.y:
-                        car.passed = True
-                        add_car = True
-                        passed_car_id = car.id
-
-                        passed_car_id += 1
-                        passed_car_id = passed_car_id % 4
-
-                if add_car:
-                    score += 1
-                    added_car_y = 0
-                    car_to_be_added = OtherCar("yellow", passed_car_id, added_car_y)
-                    if passed_car_id == 4 or passed_car_id == 0:
-                        random_car_int = random.randint(0, 1)
-                        if random_car_int == 1:
-                            car_to_be_added = OtherCar("blue", 4, added_car_y,
-                                                       dir=random.choice(['left', 'right']))
-                        else:
-                            car_to_be_added = OtherCar("otherred", 4, added_car_y,
-                                                       dir=random.choice(['left', 'right']))
-                    othercars.append(car_to_be_added)
-
-                for r in rem:
-                    othercars.remove(r)
-
-        if red.x < ROAD_LEFT_BOUNDARY or red.x + red.width > ROAD_RIGHT_BOUNDARY:
-            win.blit(crash, (red.x, red.y))
+        # determine which car to use for neural network input
+        car_ind = 0
+        if len(reds) > 0:
+            if len(othercars) > 1 and reds[0].y < othercars[0].y:
+                car_ind = 1
+            elif len(othercars) > 2 and reds[0].y < othercars[1].y:
+                car_ind = 2
+            elif len(othercars) > 3 and reds[0].y < othercars[2].y:
+                car_ind = 3
+        else:
+            run = False
             break
 
-        draw_window(win, red, othercars, base, score)
+        # give each red car a fitness of 0.1 for each frame it stays alive
+        for x, red in enumerate(reds):
+            ge[x].fitness += 0.1
 
-    end_screen(WIN)
+            # send red location, other car location and determine from network
+            # where to turn if at all
+            output = nets[x].activate((red.x,
+                                       othercars[car_ind].x + round((2 * carsize[0] / 3)/2),
+                                       othercars[car_ind].y + round(carsize[1] / 2)))
+
+            # we use a tanh activation function so result will be between -1 and 1.
+            if output[0] > 0.5:
+                red.turn("right")
+            if output[0] < -0.5:
+                red.turn("left")
+
+        # if move_left:
+        #     red.turn("left")
+        # if move_right:
+        #
+
+        rem = []
+        add_car = False
+        passed_car_id = 0
+
+        for car in othercars:
+            car.move()
+
+            if car.color == "blue" and car.y > random.randint(400, 500):
+                car.turn()
+
+            if car.color == "otherred" and car.y > random.randint(350, 450):
+                car.turn_and_reverse()
+
+            for x, redx in enumerate(reds):
+
+                if car.collide(redx, win):
+                    ge[x].fitness -= 1
+                    nets.pop(x)
+                    ge.pop(x)
+                    reds.pop(x)
+
+                if not car.passed and redx.y < car.y:
+                    car.passed = True
+                    add_car = True
+                    passed_car_id = car.id
+                    passed_car_id += 1
+                    passed_car_id = passed_car_id % 4
+
+            if car.y > WIN_HEIGHT:
+                rem.append(car)
+
+        if add_car:
+            score += 1
+            for g in ge:
+                g.fitness += 5
+
+            added_car_y = 0
+            car_to_be_added = OtherCar("yellow", passed_car_id, added_car_y)
+            if passed_car_id == 4 or passed_car_id == 0:
+                random_car_int = random.randint(0, 1)
+                if random_car_int == 1:
+                    car_to_be_added = OtherCar("blue", 4, added_car_y,
+                                               dir=random.choice(['left', 'right']))
+                else:
+                    car_to_be_added = OtherCar("otherred", 4, added_car_y,
+                                               dir=random.choice(['left', 'right']))
+            othercars.append(car_to_be_added)
+
+        for r in rem:
+            othercars.remove(r)
+
+        for redz in reds:
+            if redz.x < ROAD_LEFT_BOUNDARY or redz.x + redz.width > ROAD_RIGHT_BOUNDARY:
+                nets.pop(reds.index(redz))
+                ge.pop(reds.index(redz))
+                reds.pop(reds.index(redz))
+
+        draw_window(win, reds, othercars, base, score)
+
+        if score > best_score:
+            best_score = score
+            print("Woohooo!!! Best Score! :D", score)
+
+
+def run(config_file):
+    """
+    runs the NEAT algorithm to train a neural network to play road fighter.
+    :param config_file: location of config file
+    :return: None
+    """
+    config = neat.config.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                                neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                                config_file)
+
+
+    # Unpickle saved winner
+    with open("winner-road-fighter.pkl", "rb") as f:
+        genome = pickle.load(f)
+
+    # Convert loaded genome into required data structure
+    genomes = [(1, genome)]
+
+    # Call game with only the loaded genome
+    main(genomes, config)
 
 
 if __name__ == '__main__':
-    main(WIN)
+    # Determine path to configuration file. This path manipulation is
+    # here so that the script will run successfully regardless of the
+    # current working directory.
+    local_dir = os.path.dirname(__file__)
+    config_path = os.path.join(local_dir, 'config-feedforward.txt')
+    run(config_path)

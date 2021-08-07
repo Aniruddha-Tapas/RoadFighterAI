@@ -1,0 +1,7 @@
+digraph {
+	node [fontsize=9 height=0.2 shape=circle width=0.2]
+	"Red X" [fillcolor=lightgray shape=box style=filled]
+	"Car X" [fillcolor=lightgray shape=box style=filled]
+	"Car Y" [fillcolor=lightgray shape=box style=filled]
+	turn [fillcolor=lightblue style=filled]
+}
